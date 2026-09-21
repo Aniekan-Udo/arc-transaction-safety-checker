@@ -7,13 +7,18 @@ and return the combined result as JSON.
 
 Run with:
     uvicorn app:app --reload --port 8000
+
+In production (Render) the same process also serves frontend/index.html, so
+the page and the API share an origin and no API base URL has to be configured.
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from web3 import Web3
 
@@ -93,3 +98,13 @@ def health():
         "llm_provider": llm.name if llm else None,
         "model": llm.model if llm else None,
     }
+
+
+# Serve the frontend from this same process. Mounted last so it only catches
+# paths the API routes above did not claim. html=True makes "/" return
+# index.html.
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+if FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+else:
+    print(f"WARNING: no frontend directory at {FRONTEND_DIR}; serving API only.")

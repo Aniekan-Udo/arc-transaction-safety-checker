@@ -64,8 +64,12 @@
   </div>
 
   <script>
-    // Point this at wherever app.py ends up deployed.
-    const API_BASE = "http://localhost:8000";
+    // The API is served from this same origin in production (app.py mounts
+    // this page), so an empty base works there. Opening this file straight
+    // from disk (file://) has no origin to talk to, so fall back to the
+    // local dev server.
+    const API_BASE =
+      window.location.protocol === "file:" ? "http://localhost:8000" : "";
 
     async function checkTransaction() {
       const txHash = document.getElementById("txHash").value.trim();

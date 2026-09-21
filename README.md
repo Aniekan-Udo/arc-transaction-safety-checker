@@ -115,11 +115,12 @@ arc-transaction-safety-checker/
 ├── README.md                — you are here
 ├── requirements.txt         — Python dependencies
 ├── .env.example             — config template (copy to .env)
+├── render.yaml              — Render Blueprint (one web service)
 ├── backend/
 │   ├── scanner.py           — decode calldata + rule-based checks → facts
 │   ├── analyzer.py          — facts → score, band, recommendation, wording
 │   ├── llm.py               — swappable LLM provider (wording only)
-│   └── app.py               — FastAPI app, one route: POST /check
+│   └── app.py               — FastAPI app: POST /check, plus serves frontend/
 ├── frontend/
 │   └── index.html           — paste-and-check page, no build step
 └── tests/
@@ -213,8 +214,42 @@ curl http://localhost:8000/health
 # {"connected_to_arc":true,"llm_provider":"groq","model":"openai/gpt-oss-120b"}
 ```
 
-Then open `frontend/index.html` in a browser. Its `API_BASE` defaults to
-`http://localhost:8000`.
+Then open `frontend/index.html` in a browser. Opened from disk (`file://`) its
+`API_BASE` falls back to `http://localhost:8000`; served over http it talks to
+whatever origin served it, so no editing is needed when deployed.
+
+You can also just visit `http://localhost:8000` — the same process serves the
+page, because `app.py` mounts `frontend/` at `/`.
+
+## Deploying to Render
+
+`render.yaml` in the repo root is a Render Blueprint. One free web service runs
+`uvicorn`, which serves both the `/check` API and the frontend page, so there is
+no second static site to host and no CORS origin to configure.
+
+1. Push this branch to GitHub.
+2. Render dashboard → **New** → **Blueprint** → select this repo.
+3. Render reads `render.yaml` and prompts for the secrets. `ARC_RPC_URL` is the
+   only required one — without it every check returns `503 Not connected to Arc`.
+   `GROQ_API_KEY` (or the key for whichever `LLM_PROVIDER` you set) is optional;
+   without it explanations fall back to the rule-based wording and verdicts are
+   unchanged. The explorer vars can be left blank, which makes contract age read
+   "could not verify" rather than guessing.
+4. **Apply**. First build takes a few minutes.
+
+Health check is `/health`, which reports the live RPC connection and the active
+model:
+
+```bash
+curl https://<your-service>.onrender.com/health
+```
+
+Two things to know about the free plan: the service sleeps after ~15 minutes
+idle, so the first request after a nap takes ~30s to wake it, and the filesystem
+is ephemeral. Neither matters here — this service holds no state.
+
+`allow_origins=["*"]` in `app.py` is now broader than needed, since the page and
+API share an origin. Tighten it if you ever split them apart.
 
 ## Testing
 
