@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transaction Safety Checker</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 600px;
+    margin: 60px auto;
+    padding: 0 20px;
+    color: #1a1a2e;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.subtitle { color: #666; margin-top: 0; margin-bottom: 30px; }
+  input {
+    width: 100%;
+    padding: 12px;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+  button {
+    margin-top: 12px;
+    padding: 12px 20px;
+    font-size: 1rem;
+    background: #1a1a2e;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:disabled { background: #999; cursor: default; }
+  #result {
+    margin-top: 30px;
+    padding: 20px;
+    border-radius: 10px;
+    display: none;
+  }
+  .band-SAFE, .band-LOW    { background: #e8f7ee; border: 1px solid #a8dfc0; }
+  .band-MEDIUM             { background: #fff8e1; border: 1px solid #f0d98c; }
+  .band-HIGH, .band-CRITICAL { background: #fdecea; border: 1px solid #f3b4ac; }
+  .band-label { font-weight: bold; font-size: 1.1rem; margin-bottom: 8px; }
+  .explanation { margin-bottom: 10px; }
+  .recommendation { font-weight: bold; }
+  #error { color: #b00020; margin-top: 16px; display: none; }
+</style>
+</head>
+<body>
+
+  <h1>Transaction Safety Checker</h1>
+  <p class="subtitle">Paste an Arc transaction hash to see a plain-English risk check before you sign.</p>
+
+  <input id="txHash" type="text" placeholder="0x..." />
+  <button id="checkBtn" onclick="checkTransaction()">Check Transaction</button>
+
+  <div id="error"></div>
+  <div id="result">
+    <div class="band-label" id="bandLabel"></div>
+    <div class="explanation" id="explanation"></div>
+    <div class="recommendation" id="recommendation"></div>
+  </div>
+
+  <script>
+    // Point this at wherever app.py ends up deployed.
+    const API_BASE = "http://localhost:8000";
+
+    async function checkTransaction() {
+      const txHash = document.getElementById("txHash").value.trim();
+      const button = document.getElementById("checkBtn");
+      const resultDiv = document.getElementById("result");
+      const errorDiv = document.getElementById("error");
+
+      resultDiv.style.display = "none";
+      errorDiv.style.display = "none";
+
+      if (!txHash) {
+        errorDiv.textContent = "Please paste a transaction hash first.";
+        errorDiv.style.display = "block";
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = "Checking...";
+
+      try {
+        const response = await fetch(`${API_BASE}/check`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tx_hash: txHash }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.detail || "Something went wrong.");
+        }
+
+        const data = await response.json();
+
+        // textContent, not innerHTML: the explanation is model-generated text
+        // and must never be able to inject markup into the page.
+        resultDiv.className = `band-${data.band}`;
+        document.getElementById("bandLabel").textContent =
+          `Risk level: ${data.band} (${data.score}/100)`;
+        document.getElementById("explanation").textContent = data.explanation;
+        document.getElementById("recommendation").textContent = data.recommendation;
+        resultDiv.style.display = "block";
+      } catch (err) {
+        errorDiv.textContent = err.message;
+        errorDiv.style.display = "block";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Check Transaction";
+      }
+    }
+  </script>
+
+</body>
+</html>
