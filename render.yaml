@@ -1,0 +1,54 @@
+# Render Blueprint -- https://render.com/docs/blueprint-spec
+#
+# One web service: uvicorn runs backend/app.py, which also serves
+# frontend/index.html, so the page and the API share an origin.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and prompts for the secrets below (the ones marked sync: false --
+# they are deliberately not stored in git).
+
+services:
+  - type: web
+    name: arc-transaction-safety-checker
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    # --app-dir puts backend/ on sys.path, so app.py's flat imports
+    # (from analyzer import ...) resolve exactly as they do locally.
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --app-dir backend
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.4"
+
+      # Required: without an RPC the checker cannot read any transaction.
+      - key: ARC_RPC_URL
+        sync: false
+
+      - key: ARC_CHAIN_ID
+        value: "5042"
+
+      # Optional. Leave blank and contract age reads "could not verify"
+      # rather than being silently wrong.
+      - key: ARC_EXPLORER_API_BASE
+        sync: false
+      - key: ARC_EXPLORER_CHAIN_ID
+        sync: false
+      - key: ARC_EXPLORER_API_KEY
+        sync: false
+
+      # Explanation layer. Optional -- verdicts stay rule-based without it.
+      # Set to match your local .env; change here to switch providers.
+      - key: LLM_PROVIDER
+        value: groq
+      # Blank uses the provider's default model.
+      - key: LLM_MODEL
+        sync: false
+      # Only the key for the provider selected above needs a value. For the
+      # others (grok/xAI, gemini, openai) add XAI_API_KEY / GEMINI_API_KEY /
+      # OPENAI_API_KEY in the dashboard when you switch.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
