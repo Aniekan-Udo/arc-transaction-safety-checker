@@ -7,7 +7,8 @@ Built for the [Arc Microgrants](https://dorahacks.io/hackathon/arc-microgrants) 
 **Live on Arc mainnet (chain 5042):**
 [app](https://arcguard-aniekan-udo.vercel.app/) ·
 [API health](https://arcguard.onrender.com/health) ·
-[API docs](https://arcguard.onrender.com/docs)
+[API docs](https://arcguard.onrender.com/docs) ·
+[VerdictRegistry contract](https://explorer.arc.io/address/0x6F58770abE34cd1115Eb66232ceb5559c2e2F659)
 
 > The API is hosted on a free tier that sleeps when idle — the first check
 > after a quiet period can take up to a minute. Subsequent checks take a
@@ -281,6 +282,10 @@ curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"  
 
 ## The on-chain registry
 
+**Deployed on Arc mainnet at
+[`0x6F58770abE34cd1115Eb66232ceb5559c2e2F659`](https://explorer.arc.io/address/0x6F58770abE34cd1115Eb66232ceb5559c2e2F659)**
+(block 22235136). Attester: `0x148Ea81a63ED33dE1FA6b449D2Fc81bBBbc0f978`.
+
 ArcGuard's verdicts are computed off chain by deterministic rules.
 `contracts/VerdictRegistry.sol`, deployed on Arc mainnet, makes a verdict
 **citable**: "this tool said MEDIUM about this transaction, at this block"
@@ -356,9 +361,20 @@ curl https://arcguard.onrender.com/attestations/0x<tx_hash>
 python -m tests.test_registry
 ```
 
-Runs against a local in-memory EVM — no network, no gas, no deployment.
+Two tiers. The offline tier always runs: compilation, the ABI surface, and
+that Solidity's `Band` enum agrees with `analyzer.score_to_band` across all
+101 scores — a mismatch there would publish a wrong band permanently. The
+EVM tier runs against a local in-memory chain when `eth-tester` is
+importable, and is skipped with a notice when it is not (`py-evm` needs a C
+toolchain that some platforms lack).
+
 Unlike `test_transactions.py`, this one asserts: contract behaviour is fixed
 at deploy time and records are append-only, so a mistake is permanent.
+
+The deployed contract was verified against Arc mainnet directly: a published
+verdict reads back intact, an unattested transaction returns no record rather
+than a zero-valued `SAFE`, and re-attesting reverts with `AlreadyAttested`
+(selector `0xe7ddafdd`).
 
 ## Swapping the AI provider
 
