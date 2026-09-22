@@ -245,7 +245,9 @@ takes the unsigned call instead: the contract being called and the calldata
 your wallet is about to ask you to confirm.
 
 ```bash
-curl -X POST http://localhost:8000/check-calldata   -H "Content-Type: application/json"   -d '{"to":"0x3600...0000","data":"0x095ea7b3..."}'
+curl -X POST http://localhost:8000/check-calldata \
+  -H "Content-Type: application/json" \
+  -d '{"to":"0x3600...0000","data":"0x095ea7b3..."}'
 ```
 
 Omit `data` (or pass `"0x"`) for a plain value transfer. A malformed address
@@ -258,11 +260,83 @@ route that can carry an on-chain attestation, since a call that has not
 happened cannot have been attested.
 
 ```bash
-curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"   -d '{"tx_hash":"0x..."}'
+curl -X POST http://localhost:8000/check \
+  -H "Content-Type: application/json" \
+  -d '{"tx_hash":"0x..."}'
 ```
 
 Both return the same shape and the same verdict for the same call — they
 differ only in how the transaction is identified, not in how it is judged.
+
+### Where the `to` and `data` values come from
+
+**From your wallet, which is the point.** On a contract-interaction
+confirmation, MetaMask shows both values before you sign:
+
+- **`to`** — the contract address in the "Interacting with" / recipient field
+  at the top of the confirmation.
+- **`data`** — the long `0x…` string under the **Hex** tab (older builds:
+  *Data*, or *Advanced → Hex*).
+
+Paste both in, read the verdict, then approve or reject. Nothing has been
+signed at that point, which is the entire difference between this route and
+the by-hash one.
+
+**From a transaction already on chain**, if you want fixed values for testing
+or a demo. Any transaction's `to` and `input` are the same two fields a wallet
+would have shown before it was signed:
+
+```bash
+python - <<'PY'
+import sys; sys.path.insert(0, "backend")
+from web3 import Web3
+import scanner
+
+w3 = Web3(Web3.HTTPProvider("https://rpc.mainnet.arc.io"))
+tx = w3.eth.get_transaction("0x...")
+print("to:  ", tx["to"])
+print("data:", scanner.normalize_calldata(tx["input"]))
+PY
+```
+
+### Worked examples
+
+The four transactions in `tests/test_transactions.py`, as their pre-sign
+values. Each produces the same verdict as checking its hash.
+
+**Unlimited approval — 35/100 MEDIUM**
+
+```
+to:   0xEb64987643db71c76b2a2BE7E723DECC995E5b37
+data: 0x095ea7b30000000000000000000000002b9899bc46bf0ee094225995f4bd496d42f261afffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+```
+
+**Bounded approval — 0/100 SAFE**
+
+```
+to:   0x3600000000000000000000000000000000000000
+data: 0x095ea7b30000000000000000000000001a03539b0ad757a51565f5d0f181223a9e381b1f0000000000000000000000000000000000000000000000000000000000e606b8
+```
+
+**Plain transfer — 0/100 SAFE** (leave `data` empty)
+
+```
+to:   0xF0240CE43bB9B975FED8861EaFa5CA0746727000
+data:
+```
+
+**Undecodable call — 35/100 MEDIUM**
+
+```
+to:   0x000000000022D473030F116dDEE9F6B43aC78BA3
+data: 0x87517c4500000000000000000000000036000000000000000000000000000000000000000000000000000000000000004fca4a51ab4f23a7447b3284fbd7d73289a89fb1000000000000000000000000ffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000ffffffffffff
+```
+
+Put the first two side by side and the attack is visible in one screenshot.
+Both start `0x095ea7b3` — same function, same shape, same length. The only
+difference is the last 64 characters: `…00e606b8` is a capped allowance,
+`…ffffffff` is every token you hold, forever. Note the two use different
+tokens, so the `to` addresses differ as well.
 
 ## Testing
 
@@ -311,7 +385,9 @@ PY
 Check a transaction over HTTP:
 
 ```bash
-curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"   -d '{"tx_hash":"0x..."}'
+curl -X POST http://localhost:8000/check \
+  -H "Content-Type: application/json" \
+  -d '{"tx_hash":"0x..."}'
 ```
 
 ## The on-chain registry
