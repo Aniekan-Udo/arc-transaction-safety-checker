@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from web3 import Web3
 
+import registry
 from analyzer import analyze
 from llm import LLMError, get_provider
 from scanner import scan_transaction
@@ -24,6 +25,11 @@ from scanner import scan_transaction
 load_dotenv()
 
 ARC_RPC_URL = os.environ.get("ARC_RPC_URL", "")
+
+# The attester whose on-chain verdicts this deployment vouches for. Writes to
+# the registry are permissionless, so an attestation is only meaningful
+# relative to who signed it -- see contracts/VerdictRegistry.sol.
+ARC_ATTESTER_ADDRESS = os.environ.get("ARC_ATTESTER_ADDRESS", "")
 
 w3 = Web3(Web3.HTTPProvider(ARC_RPC_URL))
 
@@ -62,6 +68,10 @@ class CheckResponse(BaseModel):
     # The verdict is rule-based regardless -- this says how it was phrased.
     explanation_source: str
     facts: dict
+    # The matching on-chain attestation, if this verdict has been published
+    # to the VerdictRegistry on Arc. None when it has not been -- absence is
+    # never evidence that a transaction is safe.
+    attestation: dict | None = None
 
 
 @app.post("/check", response_model=CheckResponse)
@@ -83,13 +93,43 @@ def check_transaction(request: CheckRequest):
         )
 
     facts = scan_transaction(w3, tx["to"], tx["input"])
-    return analyze(llm, facts)
+    result = analyze(llm, facts)
+
+    # Read-only lookup. The API holds no key and cannot publish -- see
+    # scripts/attest.py -- so this only ever reports what is already on Arc.
+    result["attestation"] = registry.read_verdict(
+        w3, request.tx_hash, ARC_ATTESTER_ADDRESS
+    )
+    return result
 
 
 @app.get("/health")
 def health():
     return {
         "connected_to_arc": w3.is_connected(),
+        "chain_id": w3.eth.chain_id if w3.is_connected() else None,
         "llm_provider": llm.name if llm else None,
         "model": llm.model if llm else None,
+        "registry_address": registry.REGISTRY_ADDRESS or None,
+        "attester_address": ARC_ATTESTER_ADDRESS or None,
     }
+
+
+@app.get("/attestations/{tx_hash}")
+def get_attestation(tx_hash: str):
+    """
+    What this deployment's attester published on Arc about `tx_hash`.
+
+    Read-only and keyless. 404 means no attestation exists -- it does not
+    mean the transaction is safe.
+    """
+    if not w3.is_connected():
+        raise HTTPException(status_code=503, detail="Not connected to Arc RPC")
+
+    attestation = registry.read_verdict(w3, tx_hash, ARC_ATTESTER_ADDRESS)
+    if attestation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No on-chain attestation for this transaction from this attester",
+        )
+    return attestation

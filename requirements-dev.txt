@@ -1,0 +1,4 @@
+# Extras needed only to compile and deploy contracts/VerdictRegistry.sol.
+# The API reads the registry from the committed ABI and does not need solc.
+-r requirements.txt
+py-solc-x>=2.0.0

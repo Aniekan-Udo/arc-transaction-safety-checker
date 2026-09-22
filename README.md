@@ -129,11 +129,18 @@ arcguard/
 │   ├── scanner.py           — decode calldata + rule-based checks → facts
 │   ├── analyzer.py          — facts → score, band, recommendation, wording
 │   ├── llm.py               — swappable LLM provider (wording only)
-│   └── app.py               — FastAPI app, one route: POST /check
+│   ├── registry.py          — compile / read / build-write the registry
+│   └── app.py               — FastAPI app: POST /check, GET /attestations
+├── contracts/
+│   └── VerdictRegistry.sol  — on-chain record of published verdicts
+├── scripts/
+│   ├── deploy_registry.py   — deploy the registry to Arc (run once)
+│   └── attest.py            — check a tx and publish the verdict on chain
 ├── frontend/
 │   └── index.html           — paste-and-check page, no build step
 └── tests/
-    └── test_transactions.py — manual sanity-check harness
+    ├── test_transactions.py — manual sanity-check harness (live chain)
+    └── test_registry.py     — asserting tests for the contract (local EVM)
 ```
 
 ## Setup
@@ -271,6 +278,87 @@ Check a transaction over HTTP:
 ```bash
 curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"   -d '{"tx_hash":"0x..."}'
 ```
+
+## The on-chain registry
+
+ArcGuard's verdicts are computed off chain by deterministic rules.
+`contracts/VerdictRegistry.sol`, deployed on Arc mainnet, makes a verdict
+**citable**: "this tool said MEDIUM about this transaction, at this block"
+becomes a fact timestamped by Arc, rather than a claim the API makes about
+its own history.
+
+```solidity
+function attest(bytes32 txHash, uint8 score, Band band) external;
+function verdictOf(bytes32 txHash, address attester)
+    external view returns (bool found, uint8 score, Band band, uint64 timestamp);
+```
+
+**Writes are permissionless, and that is deliberate.** Anyone may attest to
+anything, so an attestation means nothing on its own — it means something
+relative to *who signed it*. Records are keyed by `(txHash, attester)`, so no
+one can overwrite or forge another attester's verdict, and consumers filter on
+the address they trust (`ARC_ATTESTER_ADDRESS`). Records are append-only:
+re-attesting the same transaction reverts rather than quietly rewriting
+history, which is the entire point of putting it on chain.
+
+**The API still holds no key.** It reads the registry and never writes to it.
+Publishing is a separate, explicitly-invoked command, for two reasons: the
+service that judges transactions must not be able to sign anything, and a
+check is free and instant while an attestation costs gas and is permanent —
+those should not be the same action.
+
+### Deploying it
+
+```bash
+pip install -r requirements-dev.txt        # adds py-solc-x; the API doesn't need it
+python -m scripts.deploy_registry
+```
+
+Needs `ATTESTER_PRIVATE_KEY` in `.env`, funded with a little USDC — Arc pays
+gas in USDC. The contract is ~1.1 KB of bytecode, so this costs cents. The
+script prints the two values to put in `.env` (and in your Render
+environment):
+
+```bash
+ARC_REGISTRY_ADDRESS=0x...
+ARC_ATTESTER_ADDRESS=0x...
+```
+
+### Publishing a verdict
+
+```bash
+python -m scripts.attest 0x<tx_hash> --dry-run   # compute only, no gas
+python -m scripts.attest 0x<tx_hash>             # publish it
+```
+
+`attest.py` runs the same `scan_transaction()` and `analyze()` the API runs
+and publishes their result verbatim — it never recomputes or adjusts a
+verdict. What lands on chain is what the rules decided.
+
+### Reading it back
+
+`POST /check` includes an `attestation` field, `null` when the transaction
+has not been attested. There is also a direct lookup:
+
+```bash
+curl https://arcguard.onrender.com/attestations/0x<tx_hash>
+```
+
+> **A missing attestation is not evidence of safety.** Both the endpoint's
+> 404 and the `null` field mean "nothing published", never "checked and
+> clean" — the same rule the `contract_age_hours` signal follows. The
+> contract's `verdictOf` returns a `found` flag for exactly this reason: an
+> unattested transaction would otherwise read as score 0, band SAFE.
+
+### Testing the contract
+
+```bash
+python -m tests.test_registry
+```
+
+Runs against a local in-memory EVM — no network, no gas, no deployment.
+Unlike `test_transactions.py`, this one asserts: contract behaviour is fixed
+at deploy time and records are append-only, so a mistake is permanent.
 
 ## Swapping the AI provider
 

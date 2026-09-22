@@ -1,0 +1,163 @@
+{
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "attester",
+          "type": "address"
+        }
+      ],
+      "name": "AlreadyAttested",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        }
+      ],
+      "name": "InvalidScore",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "txHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "attester",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum VerdictRegistry.Band",
+          "name": "band",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "timestamp",
+          "type": "uint64"
+        }
+      ],
+      "name": "VerdictAttested",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum VerdictRegistry.Band",
+          "name": "band",
+          "type": "uint8"
+        }
+      ],
+      "name": "attest",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "attestationCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "total",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "attester",
+          "type": "address"
+        }
+      ],
+      "name": "verdictOf",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "found",
+          "type": "bool"
+        },
+        {
+          "internalType": "uint8",
+          "name": "score",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum VerdictRegistry.Band",
+          "name": "band",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "timestamp",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bin": "608060405234801561000f575f80fd5b5061043a8061001d5f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c80632ddbd13a1461004e57806344bb1cbf1461006a57806373feb97c14610089578063d7a86bcf146100f6575b5f80fd5b61005760015481565b6040519081526020015b60405180910390f35b6100576100783660046102d8565b60026020525f908152604090205481565b6100e66100973660046102f8565b5f918252602082815260408084206001600160a01b03939093168452919052902054600160501b810460ff908116928183169261010081049092169162010000900467ffffffffffffffff1690565b6040516100619493929190610356565b61010961010436600461038e565b61010b565b005b60648260ff16111561013a576040516306fae60560e11b815260ff831660048201526024015b60405180910390fd5b5f83815260208181526040808320338452909152902054600160501b900460ff16156101825760405163e7ddafdd60e01b815260048101849052336024820152604401610131565b60405180608001604052808360ff1681526020018260048111156101a8576101a8610322565b815267ffffffffffffffff421660208083019190915260016040928301525f8681528082528281203382528252919091208251815460ff90911660ff19821681178355928401519192839161ffff19161761010083600481111561020e5761020e610322565b021790555060408281015182546060909401511515600160501b0260ff60501b1967ffffffffffffffff9092166201000002919091166affffffffffffffffff000019909416939093179290921790556001805481018155335f81815260026020528390208054909201909155905184907f3c385bbe7a6112695818cbf5df72a1794e0693432ef0df201507704c080ea403906102b0908690869042906103d5565b60405180910390a3505050565b80356001600160a01b03811681146102d3575f80fd5b919050565b5f602082840312156102e8575f80fd5b6102f1826102bd565b9392505050565b5f8060408385031215610309575f80fd5b82359150610319602084016102bd565b90509250929050565b634e487b7160e01b5f52602160045260245ffd5b6005811061035257634e487b7160e01b5f52602160045260245ffd5b9052565b841515815260ff84166020820152608081016103756040830185610336565b67ffffffffffffffff8316606083015295945050505050565b5f805f606084860312156103a0575f80fd5b83359250602084013560ff811681146103b7575f80fd5b91506040840135600581106103ca575f80fd5b809150509250925092565b60ff84168152606081016103ec6020830185610336565b67ffffffffffffffff8316604083015294935050505056fea2646970667358221220af9438e2d8107f5a3958adf03a3c83bd6bb44db3cb867bd71d0042436cf540dc64736f6c63430008180033"
+}
