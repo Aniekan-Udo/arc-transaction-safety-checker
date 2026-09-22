@@ -1,4 +1,4 @@
-# Arc Transaction Safety Checker
+# ArcGuard
 
 Paste a transaction, find out whether it's safe to sign — in plain English.
 
