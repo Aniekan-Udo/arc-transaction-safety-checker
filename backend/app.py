@@ -59,6 +59,18 @@ class CheckRequest(BaseModel):
     tx_hash: str
 
 
+class CheckCalldataRequest(BaseModel):
+    """
+    A transaction that has not been signed yet: the contract being called and
+    the calldata about to be sent to it, exactly as a wallet shows them
+    before you confirm.
+    """
+
+    to: str
+    # Omitted or "0x" means a plain value transfer with no contract call.
+    data: str = "0x"
+
+
 class CheckResponse(BaseModel):
     score: int
     band: str
@@ -100,6 +112,50 @@ def check_transaction(request: CheckRequest):
     result["attestation"] = registry.read_verdict(
         w3, request.tx_hash, ARC_ATTESTER_ADDRESS
     )
+    return result
+
+
+@app.post("/check-calldata", response_model=CheckResponse)
+def check_calldata(request: CheckCalldataRequest):
+    """
+    Check a transaction *before* it is signed.
+
+    POST /check needs a transaction hash, which only exists once a
+    transaction has been signed and broadcast -- by then the approval you
+    were worried about has already been granted. This route takes the
+    unsigned call instead: the `to` address and the calldata a wallet is
+    about to ask you to confirm.
+
+    Nothing here touches the chain's transaction history, so there is no
+    attestation to report: a call that has not happened cannot have been
+    attested. The field stays null rather than being omitted, so the two
+    routes return the same shape.
+    """
+    if not w3.is_connected():
+        raise HTTPException(status_code=503, detail="Not connected to Arc RPC")
+
+    try:
+        to_address = Web3.to_checksum_address(request.to)
+    except Exception:
+        raise HTTPException(
+            status_code=400, detail=f"{request.to!r} is not a valid address"
+        )
+
+    data = request.data or "0x"
+    if not data.startswith("0x"):
+        data = "0x" + data
+    try:
+        # Reject malformed calldata here rather than letting it fall through
+        # to the decoder, where it would be indistinguishable from calldata
+        # we simply do not recognise -- and so would score MEDIUM as though
+        # it were a real unknown call.
+        bytes.fromhex(data[2:])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="`data` is not valid hex")
+
+    facts = scan_transaction(w3, to_address, data)
+    result = analyze(llm, facts)
+    result["attestation"] = None
     return result
 
 

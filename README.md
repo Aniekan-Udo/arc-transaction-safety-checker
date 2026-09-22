@@ -34,8 +34,11 @@ call.
 
 ## What this tool does
 
-You paste in a transaction before approving it. It answers one question:
-**is this safe to sign?**
+You paste in a transaction before approving it — the contract address and the
+data field, straight off your wallet's confirmation screen. It answers one
+question: **is this safe to sign?**
+
+You can also check a transaction that has already been sent, by its hash.
 
 You get a short sentence with no jargon, and a clear recommendation. Real
 output from the tool:
@@ -82,7 +85,7 @@ password or recovery phrase. It only reads public information.
 Built in a few days for a grant submission, not a finished product. It does
 **not**:
 
-- Pop up automatically inside your wallet — you paste transactions in by hand
+- Pop up automatically inside your wallet — you paste the details in by hand
 - Catch every scam — it focuses on one very common, very costly pattern
 - Maintain its own scam database — it relies on an outside service
 
@@ -97,7 +100,9 @@ The tool says "we could not check" rather than guessing — see Part 2.
 ## How it works
 
 ```
-User → frontend/index.html → backend/app.py  (POST /check)
+User → frontend/index.html → backend/app.py
+                       (POST /check-calldata, before signing)
+                       (POST /check, by hash, after)
                                    │
                     ┌──────────────┴──────────────┐
                     ▼                             ▼
@@ -131,7 +136,7 @@ arcguard/
 │   ├── analyzer.py          — facts → score, band, recommendation, wording
 │   ├── llm.py               — swappable LLM provider (wording only)
 │   ├── registry.py          — compile / read / build-write the registry
-│   └── app.py               — FastAPI app: POST /check, GET /attestations
+│   └── app.py               — FastAPI app: /check-calldata, /check, /attestations
 ├── contracts/
 │   └── VerdictRegistry.sol  — on-chain record of published verdicts
 ├── scripts/
@@ -139,6 +144,7 @@ arcguard/
 │   └── attest.py            — check a tx and publish the verdict on chain
 ├── frontend/
 │   └── index.html           — paste-and-check page, no build step
+│                            (pre-sign and by-hash modes)
 └── tests/
     ├── test_transactions.py — manual sanity-check harness (live chain)
     └── test_registry.py     — asserting tests for the contract (local EVM)
@@ -229,6 +235,34 @@ curl http://localhost:8000/health
 
 Then open `frontend/index.html` in a browser. Point its `API_BASE` at your
 local server to develop against it.
+
+## The two ways to check
+
+**Before signing** — the one that protects you. A transaction hash only
+exists once a transaction has been signed and broadcast, by which point the
+approval you were worried about has already been granted. So the main route
+takes the unsigned call instead: the contract being called and the calldata
+your wallet is about to ask you to confirm.
+
+```bash
+curl -X POST http://localhost:8000/check-calldata   -H "Content-Type: application/json"   -d '{"to":"0x3600...0000","data":"0x095ea7b3..."}'
+```
+
+Omit `data` (or pass `"0x"`) for a plain value transfer. A malformed address
+or non-hex calldata returns 400 rather than being scored — unreadable input
+must not be confused with calldata we simply do not recognise, which scores
+MEDIUM as a genuine unknown.
+
+**After sending** — by hash, for a transaction already on chain. This is the
+route that can carry an on-chain attestation, since a call that has not
+happened cannot have been attested.
+
+```bash
+curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"   -d '{"tx_hash":"0x..."}'
+```
+
+Both return the same shape and the same verdict for the same call — they
+differ only in how the transaction is identified, not in how it is judged.
 
 ## Testing
 

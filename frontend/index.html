@@ -46,14 +46,48 @@
   .explanation { margin-bottom: 10px; }
   .recommendation { font-weight: bold; }
   #error { color: #b00020; margin-top: 16px; display: none; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab {
+    margin-top: 0;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    background: #eee;
+    color: #555;
+  }
+  .tab.active { background: #1a1a2e; color: white; }
+  .hint { color: #666; font-size: 0.88rem; margin: 0 0 10px; }
+  #presignPane input + input { margin-top: 8px; }
+  .attestation {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    font-size: 0.85rem;
+    color: #444;
+  }
 </style>
 </head>
 <body>
 
   <h1>Transaction Safety Checker</h1>
-  <p class="subtitle">Paste an Arc mainnet transaction hash to see a plain-English risk check before you sign.</p>
+  <p class="subtitle">A plain-English risk check for Arc mainnet transactions.</p>
 
-  <input id="txHash" type="text" placeholder="Arc mainnet transaction hash (0x...)" />
+  <div class="tabs">
+    <button type="button" class="tab active" id="tabPresign" onclick="setMode('presign')">Before you sign</button>
+    <button type="button" class="tab" id="tabHash" onclick="setMode('hash')">Already sent</button>
+  </div>
+
+  <div id="presignPane">
+    <p class="hint">Check a transaction your wallet is asking you to confirm, before you approve it. Copy the
+      contract address and the data field from the confirmation screen.</p>
+    <input id="toAddress" type="text" placeholder="Contract address the wallet is calling (0x...)" />
+    <input id="calldata" type="text" placeholder="Data / hex field from the wallet (0x... — leave blank for a plain transfer)" />
+  </div>
+
+  <div id="hashPane" hidden>
+    <p class="hint">Check a transaction that has already been sent, using its hash.</p>
+    <input id="txHash" type="text" placeholder="Arc mainnet transaction hash (0x...)" />
+  </div>
+
   <button id="checkBtn" onclick="checkTransaction()">Check Transaction</button>
 
   <div id="error"></div>
@@ -61,14 +95,42 @@
     <div class="band-label" id="bandLabel"></div>
     <div class="explanation" id="explanation"></div>
     <div class="recommendation" id="recommendation"></div>
+    <div class="attestation" id="attestation" hidden></div>
   </div>
 
   <script>
     // Point this at wherever app.py ends up deployed.
     const API_BASE = "https://arcguard.onrender.com";
 
+    // "presign" checks an unsigned call, which is the point of the tool;
+    // "hash" checks one already broadcast. Pre-sign is the default because
+    // by the time a hash exists, the approval has already been granted.
+    let mode = "presign";
+
+    function setMode(next) {
+      mode = next;
+      document.getElementById("tabPresign").classList.toggle("active", next === "presign");
+      document.getElementById("tabHash").classList.toggle("active", next === "hash");
+      document.getElementById("presignPane").hidden = next !== "presign";
+      document.getElementById("hashPane").hidden = next !== "hash";
+      document.getElementById("result").style.display = "none";
+      document.getElementById("error").style.display = "none";
+    }
+
+    function buildRequest() {
+      if (mode === "hash") {
+        const txHash = document.getElementById("txHash").value.trim();
+        if (!txHash) return { error: "Please paste a transaction hash first." };
+        return { path: "/check", body: { tx_hash: txHash } };
+      }
+
+      const to = document.getElementById("toAddress").value.trim();
+      const data = document.getElementById("calldata").value.trim();
+      if (!to) return { error: "Please paste the contract address the wallet is calling." };
+      return { path: "/check-calldata", body: { to: to, data: data || "0x" } };
+    }
+
     async function checkTransaction() {
-      const txHash = document.getElementById("txHash").value.trim();
       const button = document.getElementById("checkBtn");
       const resultDiv = document.getElementById("result");
       const errorDiv = document.getElementById("error");
@@ -76,8 +138,9 @@
       resultDiv.style.display = "none";
       errorDiv.style.display = "none";
 
-      if (!txHash) {
-        errorDiv.textContent = "Please paste a transaction hash first.";
+      const request = buildRequest();
+      if (request.error) {
+        errorDiv.textContent = request.error;
         errorDiv.style.display = "block";
         return;
       }
@@ -86,10 +149,10 @@
       button.textContent = "Checking...";
 
       try {
-        const response = await fetch(`${API_BASE}/check`, {
+        const response = await fetch(`${API_BASE}${request.path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tx_hash: txHash }),
+          body: JSON.stringify(request.body),
         });
 
         if (!response.ok) {
@@ -106,6 +169,20 @@
           `Risk level: ${data.band} (${data.score}/100)`;
         document.getElementById("explanation").textContent = data.explanation;
         document.getElementById("recommendation").textContent = data.recommendation;
+
+        // Only ever shown when a record exists. Its absence is never
+        // presented as reassurance -- an unattested transaction is not a
+        // checked-and-clean one.
+        const attestationDiv = document.getElementById("attestation");
+        if (data.attestation) {
+          attestationDiv.textContent =
+            `Published on Arc: ${data.attestation.score}/100 ` +
+            `${data.attestation.band}, attested by ${data.attestation.attester}`;
+          attestationDiv.hidden = false;
+        } else {
+          attestationDiv.hidden = true;
+        }
+
         resultDiv.style.display = "block";
       } catch (err) {
         errorDiv.textContent = err.message;
