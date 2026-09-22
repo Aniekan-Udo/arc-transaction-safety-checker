@@ -4,14 +4,19 @@ test_transactions.py
 A small, manual sanity-check harness -- not a full pytest suite.
 Run this before you trust the scoring.
 
-The hashes below are real Arc TESTNET transactions (chain 5042002), found by
+The hashes below are real Arc MAINNET transactions (chain 5042), found by
 scanning recent blocks and verified against this pipeline. They are not
-invented. They will age out of relevance as the chain moves on -- replace
-them with fresher ones when the expectations below stop matching, and note
-that they resolve only while .env points at testnet.
+invented. Public Arc nodes prune old history, so they will eventually stop
+resolving -- rescan recent blocks and replace them when that happens.
 
 Note that unlimited approvals are not rare on Arc: a scan of 300 consecutive
 mainnet blocks found 38 of them among 87 approve() calls.
+
+On mainnet contract_age_hours is always None, because explorer.arc.io serves
+/api behind a Cloudflare bot challenge. The fresh_contract signal therefore
+never fires and an unlimited approval tops out at MEDIUM (35) rather than
+HIGH (60). That is correct behaviour, not a bug -- the tool reports what it
+could not verify instead of guessing.
 
 Run with (from the project root):
     python -m tests.test_transactions
@@ -34,19 +39,26 @@ load_dotenv()
 
 TEST_CASES = [
     {
-        "label": "Plain transfer (expect: SAFE, is_plain_transfer=True)",
-        "tx_hash": "0xfe6e656aa197070870c700c7dfa370a1fabe64b1eca6694579505cb250f49560",
+        "label": "Plain transfer (expect: SAFE 0, is_plain_transfer=True)",
+        "tx_hash": "0x42743ee39ad74060cfe1634b22c6e3a941cb45aea2892b77b5fce4c8900547a4",
     },
     {
-        "label": "Bounded approval (expect: SAFE, unlimited_approval=False)",
-        "tx_hash": "0xa823199977b7478c04a2676e228ece99207fe6f02e16ad139d703741f5c0f6e4",
+        "label": "Bounded approval (expect: SAFE 0, unlimited_approval=False)",
+        "tx_hash": "0x446fc48beb8eecc76d2f853a81e39a5cca1fcc8e38159038f25c2d2260c08d89",
     },
     {
-        # MEDIUM, not HIGH: the spender is an established contract, so the
-        # fresh-contract signal that compounds with an unlimited approval
-        # does not fire. Both together are what produce HIGH (60).
-        "label": "Unlimited approval (expect: MEDIUM, unlimited_approval=True)",
-        "tx_hash": "0xd32d674a93a281fda79bdfeda05f5302321a68b7ccaaf83cfade52861ce39200",
+        # MEDIUM, not HIGH: fresh_contract cannot fire on mainnet (no explorer
+        # API), so the unlimited-approval weight stands alone. With contract
+        # age available, an unlimited approval to a contract under 24h old
+        # would score 60 / HIGH.
+        "label": "Unlimited approval (expect: MEDIUM 35, unlimited_approval=True)",
+        "tx_hash": "0xddbcda238923133abd1669693b4d82185e1182c3b6904c93b5a78ba5865598cb",
+    },
+    {
+        # Calldata we cannot decode is penalised, never treated as safe:
+        # not knowing what you are authorising is its own risk.
+        "label": "Undecodable call (expect: MEDIUM 35, function=None)",
+        "tx_hash": "0x5b279ad0a75527c0c78fb610e1e3fb45303ea1fc74349107dd1d8e7e5cbf0248",
     },
 ]
 

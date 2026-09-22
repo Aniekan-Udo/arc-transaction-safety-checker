@@ -4,6 +4,15 @@ Paste a transaction, find out whether it's safe to sign — in plain English.
 
 Built for the [Arc Microgrants](https://dorahacks.io/hackathon/arc-microgrants) program (Circle / DoraHacks).
 
+**Live on Arc mainnet (chain 5042):**
+[app](https://arcguard-aniekan-udo.vercel.app/) ·
+[API health](https://arcguard.onrender.com/health) ·
+[API docs](https://arcguard.onrender.com/docs)
+
+> The API is hosted on a free tier that sleeps when idle — the first check
+> after a quiet period can take up to a minute. Subsequent checks take a
+> few seconds.
+
 **Part 1 is for anyone. Part 2 is for developers.**
 
 ---
@@ -30,18 +39,19 @@ You paste in a transaction before approving it. It answers one question:
 You get a short sentence with no jargon, and a clear recommendation. Real
 output from the tool:
 
-> This lets 0xa05818C8… spend your tokens at any time, in any amount, for as
-> long as you leave the permission in place. That address was created less
-> than an hour ago.
+> This lets 0x2B9899bC… spend your tokens at any time, in any amount, for as
+> long as you leave the permission in place.
 >
-> **Do not sign this transaction**
+> **Proceed with caution**
 
 Compare that to a safe one:
 
-> This sends funds to 0x7F992cf8… It does not give anyone ongoing permission
+> This sends funds to 0xF0240CE4… It does not give anyone ongoing permission
 > to spend your money.
 >
 > **Safe to proceed**
+
+Both are real Arc mainnet transactions, checked by the live tool.
 
 Three possible answers: **Safe to proceed**, **Proceed with caution**, or
 **Do not sign this transaction**.
@@ -111,7 +121,7 @@ See [Design decisions](#design-decisions).
 ## Project layout
 
 ```
-arc-transaction-safety-checker/
+arcguard/
 ├── README.md                — you are here
 ├── requirements.txt         — Python dependencies
 ├── .env.example             — config template (copy to .env)
@@ -129,8 +139,8 @@ arc-transaction-safety-checker/
 ## Setup
 
 ```bash
-git clone <this-repo>
-cd arc-transaction-safety-checker
+git clone https://github.com/Aniekan-Udo/arcguard.git
+cd arcguard
 
 python -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
@@ -140,47 +150,19 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Then pick a network below and fill in `.env`.
+`.env.example` is already set up for Arc mainnet — you only need to add an
+LLM key if you want one (it is optional; see below).
 
 > Verified on Python 3.14 with `web3` 8.0.0, `anthropic` 1.7.0 and
 > `hexbytes` 2.0.0. Note that `hexbytes` ≥1.0 dropped the `0x` prefix from
 > `.hex()`, which silently breaks ABI decoding — `scanner.normalize_calldata()`
 > exists because of it, so pass `tx["input"]` through rather than `.hex()`.
 
-## Choosing a network
+## Network
 
-This matters more than it looks: **the two networks do not offer the same
-capability**, because contract-age data is only reachable on testnet.
-
-|                              | Testnet                             | Mainnet                          |
-| ---------------------------- | ----------------------------------- | -------------------------------- |
-| Chain ID                     | `5042002`                           | `5042`                           |
-| RPC                          | `https://rpc.testnet.arc.io`        | `https://rpc.mainnet.arc.io`     |
-| Explorer API                 | `https://explorer.testnet.arc.io`   | none public (see below)          |
-| Unlimited-approval check     | works                               | works                            |
-| Known-scam check (GoPlus)    | works                               | works                            |
-| Contract-age check           | **works**                           | **unavailable**                  |
-| Highest reachable verdict for an unlimited approval | **HIGH (60)** — "Do not sign" | MEDIUM (35) — "Proceed with caution" |
-
-Mainnet's `explorer.arc.io` serves `/api` behind a Cloudflare bot challenge, so
-a server-side client receives an HTML challenge page instead of JSON. Real API
-access has to come from Arc/Circle. Until then `contract_age_hours` is always
-`None` on mainnet, the `fresh_contract` signal never fires, and mainnet runs on
-two of its three signals.
-
-**So: demo on testnet, where all three signals work. Use mainnet for real
-transaction data, knowing the age signal is dark.**
-
-### Testnet config
-
-```bash
-ARC_RPC_URL=https://rpc.testnet.arc.io
-ARC_CHAIN_ID=5042002
-ARC_EXPLORER_API_BASE=https://explorer.testnet.arc.io
-ARC_EXPLORER_CHAIN_ID=5042002
-```
-
-### Mainnet config
+**This project runs on Arc mainnet (chain `5042`).** That is the default in
+`.env.example`, the configuration the live deployment uses, and the network
+the bundled test transactions come from.
 
 ```bash
 ARC_RPC_URL=https://rpc.mainnet.arc.io
@@ -189,15 +171,39 @@ ARC_EXPLORER_API_BASE=
 ARC_EXPLORER_CHAIN_ID=
 ```
 
-> **Change all four together.** `ARC_EXPLORER_CHAIN_ID` must match the chain the
-> RPC serves or the explorer is ignored outright. This is a safety check, not
-> pedantry: addresses collide across chains (2 of 11 sampled Arc mainnet
-> contracts also have code at the same testnet address), so a testnet explorer
-> answering about a mainnet address can return a creation date belonging to a
-> completely different contract — making a brand-new scam contract look
-> established and silently downgrading a HIGH verdict to MEDIUM.
+### One signal is dark on mainnet, and the tool says so
 
-`.env` ships with both profiles, testnet active and mainnet commented out.
+Of the three risk signals, two work on mainnet and one cannot:
+
+| Signal                    | Mainnet       |
+| ------------------------- | ------------- |
+| Unlimited-approval check  | works         |
+| Known-scam check (GoPlus) | works         |
+| Contract-age check        | unavailable   |
+
+`explorer.arc.io` serves `/api` behind a Cloudflare bot challenge, so a
+server-side client receives an HTML challenge page instead of JSON. Real API
+access has to come from Arc/Circle. Until then `contract_age_hours` is always
+`None`, the `fresh_contract` signal never fires, and the highest reachable
+verdict for an unlimited approval is **MEDIUM (35)** rather than HIGH (60).
+
+This is reported, never papered over: the explanation reads *"We could not
+check how long that address has existed"* rather than implying the address is
+established. An unverifiable signal is shown as unverified, not as clean —
+see [Design decisions](#design-decisions), point 3.
+
+The `known_scam` signal reaches **CRITICAL (70)** on mainnet on its own, so
+"Do not sign this transaction" is live today for blocklisted counterparties.
+
+> **If you do point the explorer at a chain, change all four values together.**
+> `ARC_EXPLORER_CHAIN_ID` must match the chain the RPC serves or the explorer
+> is ignored outright. This is a safety check, not pedantry: addresses collide
+> across chains (2 of 11 sampled Arc mainnet contracts also have code at the
+> same address on testnet), so an explorer indexing a different chain can
+> return a creation date belonging to a completely different contract — making
+> a brand-new scam contract look established and silently downgrading a HIGH
+> verdict to MEDIUM. Every other failure in this system fails closed; that one
+> would fail open, which is why `explorer_available()` exists.
 
 ## Running it
 
@@ -206,101 +212,65 @@ cd backend
 uvicorn app:app --reload --port 8000
 ```
 
-Check it came up, and confirm which network and model it's using:
+Check it came up, and confirm the network and model:
 
 ```bash
 curl http://localhost:8000/health
 # {"connected_to_arc":true,"llm_provider":"groq","model":"openai/gpt-oss-120b"}
 ```
 
-Then open `frontend/index.html` in a browser. Its `API_BASE` defaults to
-`http://localhost:8000`.
+Then open `frontend/index.html` in a browser. Point its `API_BASE` at your
+local server to develop against it.
 
 ## Testing
-
-### Quick check (either network)
 
 ```bash
 python -m tests.test_transactions
 ```
 
-This runs three real transactions through the full pipeline and prints the
-facts, score, band, wording, and where the wording came from. The bundled
-hashes are **testnet** transactions — on mainnet they won't resolve, so replace
-them with mainnet hashes (see below).
-
-Expected on testnet:
+This runs four real Arc mainnet transactions through the full pipeline and
+prints the facts, score, band, wording, and where the wording came from.
 
 | Case               | Score | Band   | Recommendation       |
 | ------------------ | ----- | ------ | -------------------- |
 | Plain transfer     | 0     | SAFE   | Safe to proceed      |
 | Bounded approval   | 0     | SAFE   | Safe to proceed      |
 | Unlimited approval | 35    | MEDIUM | Proceed with caution |
+| Undecodable call   | 35    | MEDIUM | Proceed with caution |
 
-The third case is MEDIUM rather than HIGH because its spender is an
-established contract. HIGH requires unlimited approval **and** a contract
-younger than 24 hours.
+The unlimited approval is MEDIUM rather than HIGH because `fresh_contract`
+cannot fire without contract age. HIGH (60) requires an unlimited approval
+**and** a counterparty younger than 24 hours.
 
-### Testing on testnet (full capability)
+Public Arc nodes prune old history, so these hashes will eventually stop
+resolving. Rescan recent blocks to replace them — unlimited approvals are not
+rare (a scan of 300 consecutive mainnet blocks found 38 among 87 `approve()`
+calls):
 
-1. Set the testnet config above.
-2. Start the API and confirm `/health` shows `connected_to_arc: true`.
-3. Run `python -m tests.test_transactions` — all three cases should pass.
-4. **To see the HIGH verdict**, you need an unlimited approval to a
-   freshly-deployed contract. Deploy any throwaway contract to Arc testnet,
-   then send an `approve()` call to it with `amount = 2**256 - 1`, and check
-   that transaction hash. While the spender is under 24 hours old you get:
+```bash
+python - <<'PY'
+import sys; sys.path.insert(0, "backend")
+from web3 import Web3
+import scanner
 
-   ```
-   60/100 HIGH — Do not sign this transaction
-   ```
+w3 = Web3(Web3.HTTPProvider("https://rpc.mainnet.arc.io"))
+latest = w3.eth.block_number
+for n in range(latest, latest - 300, -1):
+    for tx in w3.eth.get_block(n, full_transactions=True).transactions:
+        if not tx["to"]:
+            continue
+        decoded = scanner.decode_function_call(w3, tx["to"], tx["input"])
+        if decoded and decoded["params"].get("amount") == scanner.MAX_UINT256:
+            print("unlimited approval:", "0x" + tx["hash"].hex().removeprefix("0x"))
+            raise SystemExit
+PY
+```
 
-5. Check a transaction over HTTP:
+Check a transaction over HTTP:
 
-   ```bash
-   curl -X POST http://localhost:8000/check \
-     -H "Content-Type: application/json" \
-     -d '{"tx_hash":"0x..."}'
-   ```
-
-**Testnet explorer rate limit:** the Etherscan-compatible `/api` allows about
-10 requests before returning HTTP 429 for roughly 17 minutes. The code falls
-back to Blockscout's unthrottled `/api/v2` automatically, and caches every
-successful lookup, so this rarely bites — but if contract ages start coming
-back `None` under heavy use, that's why.
-
-### Testing on mainnet
-
-1. Set the mainnet config above. Leave both explorer variables **empty**.
-2. Restart the API. `/health` should still show `connected_to_arc: true`.
-3. Find real mainnet transactions to test with — unlimited approvals are
-   common (a scan of 300 consecutive mainnet blocks found 38 of them among 87
-   `approve()` calls):
-
-   ```bash
-   python - <<'PY'
-   import sys; sys.path.insert(0, "backend")
-   from web3 import Web3
-   import scanner
-
-   w3 = Web3(Web3.HTTPProvider("https://rpc.mainnet.arc.io"))
-   latest = w3.eth.block_number
-   for n in range(latest, latest - 300, -1):
-       for tx in w3.eth.get_block(n, full_transactions=True).transactions:
-           if not tx["to"]:
-               continue
-           decoded = scanner.decode_function_call(w3, tx["to"], tx["input"])
-           if decoded and decoded["params"].get("amount") == scanner.MAX_UINT256:
-               print("unlimited approval:", "0x" + tx["hash"].hex().removeprefix("0x"))
-               raise SystemExit
-   PY
-   ```
-
-4. Put those hashes into `TEST_CASES` in `tests/test_transactions.py` and run
-   it, or POST them to `/check`.
-5. **Expect `contract_age_hours: None` and a MEDIUM ceiling.** That is correct
-   behaviour on mainnet, not a bug — the tool reports "We could not check how
-   long that address has existed" rather than inventing a number.
+```bash
+curl -X POST http://localhost:8000/check   -H "Content-Type: application/json"   -d '{"tx_hash":"0x..."}'
+```
 
 ## Swapping the AI provider
 
@@ -412,7 +382,8 @@ OpenAI-compatible; otherwise a small class with a `complete()` method.
 ## Known gaps & next steps
 
 - **Mainnet contract age is unavailable** — see [Choosing a
-  network](#choosing-a-network). The single biggest gap: it costs the HIGH
+  network](#one-signal-is-dark-on-mainnet-and-the-tool-says-so). The single
+  biggest gap: it costs the HIGH
   band on mainnet. Needs explorer API access from Arc/Circle.
 - **Function coverage is narrow on purpose** — only `approve` and
   `transferFrom` are decoded today.
